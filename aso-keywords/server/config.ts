@@ -49,6 +49,33 @@ export function saveKeywords(appId: string, keywords: Record<string, string[]>) 
   writeFileSync(join(KEYWORDS_FILES_DIR, `${appId}.json`), JSON.stringify(keywords, null, 2));
 }
 
+export interface KeywordTrafficRow {
+  text: string;
+  country: string;
+  impressions: number;
+  taps: number;
+  installs: number;
+  spend: number;
+  trials?: number;
+  paid?: number;
+  revenue_usd?: number;
+  source?: 'apple-ads' | 'manual';
+  period?: string;
+}
+
+export function loadKeywordTraffic(appId: string): KeywordTrafficRow[] {
+  ensureDirs();
+  const p = join(KEYWORDS_FILES_DIR, `${appId}.traffic`);
+  if (!existsSync(p)) return [];
+  try { return JSON.parse(readFileSync(p, 'utf8')) as KeywordTrafficRow[]; }
+  catch { return []; }
+}
+
+export function saveKeywordTraffic(appId: string, rows: KeywordTrafficRow[]) {
+  ensureDirs();
+  writeFileSync(join(KEYWORDS_FILES_DIR, `${appId}.traffic`), JSON.stringify(rows, null, 2));
+}
+
 export function loadAllKeywords(): Record<string, Record<string, string[]>> {
   ensureDirs();
   const out: Record<string, Record<string, string[]>> = {};

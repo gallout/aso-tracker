@@ -41,7 +41,9 @@ async function throttle(sleepMs: number) {
 
 // iTunes returns 403/429 when IP is throttled, 502/503/504 when overloaded.
 // Treat all of these as transient — pause + retry. Persistent = RateLimited (aborts snapshot).
-const RATE_LIMIT_STATUSES = new Set([403, 429, 502, 503, 504]);
+// A 403 is commonly query-specific on this endpoint (adjacent queries still
+// succeed), so record it for that keyword instead of globally throttling the run.
+const RATE_LIMIT_STATUSES = new Set([429, 502, 503, 504]);
 
 export async function searchItunes(
   country: string,

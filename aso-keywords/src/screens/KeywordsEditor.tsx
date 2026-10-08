@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Icon, Flag, Badge } from '../design/primitives.jsx';
-import { api, type AppStats } from '../api';
+import { api, type AppStats, type AsaKeywordMetric, type AsaSearchTermMetric, type RankingRow } from '../api';
 
 interface Props {
   app: AppStats;
@@ -87,6 +87,10 @@ export default function KeywordsEditor({ app, onChanged, onRunLocaleSnapshot, on
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [addLocaleOpen, setAddLocaleOpen] = useState(false);
+  const [rankings, setRankings] = useState<RankingRow[]>([]);
+  const [asaKeywords, setAsaKeywords] = useState<AsaKeywordMetric[]>([]);
+  const [asaTerms, setAsaTerms] = useState<AsaSearchTermMetric[]>([]);
+  const [trafficAvailable, setTrafficAvailable] = useState<boolean | null>(null);
 
   const setActiveLocale = (loc: string | null) => {
     setActiveLocaleState(loc);
@@ -105,6 +109,18 @@ export default function KeywordsEditor({ app, onChanged, onRunLocaleSnapshot, on
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [app.id]);
 
+  useEffect(() => {
+    api.rankings(app.id).then(setRankings).catch(() => setRankings([]));
+    Promise.allSettled([api.keywordTraffic(app.id), api.asaKeywords(app.iTunesId, 84), api.asaSearchTerms(app.iTunesId, 84)])
+      .then(([local, keywords, terms]) => {
+        const localRows = local.status === 'fulfilled' ? local.value : [];
+        const asaRows = keywords.status === 'fulfilled' ? keywords.value : [];
+        setAsaKeywords([...localRows, ...asaRows]);
+        setAsaTerms(terms.status === 'fulfilled' ? terms.value : []);
+        setTrafficAvailable(localRows.length > 0 || keywords.status === 'fulfilled' || terms.status === 'fulfilled');
+      });
+  }, [app.id, app.iTunesId]);
+
   const localeList = useMemo(() => {
     const entries = Object.entries(kwMap).map(([code, kws]) => ({ code, count: kws.length }));
     const needle = search.toLowerCase();
@@ -114,6 +130,41 @@ export default function KeywordsEditor({ app, onChanged, onRunLocaleSnapshot, on
 
   const currentKws = activeLocale ? kwMap[activeLocale] ?? [] : [];
   const totalKw = Object.values(kwMap).reduce((a, b) => a + b.length, 0);
+
+  const keywordRows = useMemo(() => {
+    const norm = (s: string) => s.trim().toLocaleLowerCase();
+    const country = activeLocale?.split('-')[0].toLowerCase();
+    const byTerm = new Map<string, { impressions: number; taps: number; installs: number; spend: number; trials: number; paid: number; revenue: number }>();
+    const add = (term: string, metric: { country: string; impressions: number; taps: number; installs: number; spend: number; trials?: number; paid?: number; revenue_usd?: number }) => {
+      if (country && metric.country.toLowerCase() !== country) return;
+      const key = norm(term);
+      const row = byTerm.get(key) ?? { impressions: 0, taps: 0, installs: 0, spend: 0, trials: 0, paid: 0, revenue: 0 };
+      row.impressions += metric.impressions || 0;
+      row.taps += metric.taps || 0;
+      row.installs += metric.installs || 0;
+      row.spend += metric.spend || 0;
+      row.trials += metric.trials || 0;
+      row.paid += metric.paid || 0;
+      row.revenue += metric.revenue_usd || 0;
+      byTerm.set(key, row);
+    };
+    asaKeywords.forEach((m) => add(m.text, m));
+    asaTerms.forEach((m) => add(m.term, m));
+    const positions = new Map(rankings.map((r) => [`${r.locale}|${norm(r.keyword)}`, r.today]));
+    return currentKws.map((keyword) => {
+      const traffic = byTerm.get(norm(keyword));
+      const position = activeLocale ? positions.get(`${activeLocale}|${norm(keyword)}`) ?? null : null;
+      let signal: 'revenue' | 'proven' | 'trial-risk' | 'no-installs' | 'thin' | 'unknown' = 'unknown';
+      if (traffic) {
+        if (traffic.paid > 0 || traffic.revenue > 0) signal = 'revenue';
+        else if (traffic.trials > 0) signal = 'trial-risk';
+        else if (traffic.installs >= 3) signal = 'proven';
+        else if (traffic.impressions >= 100 && traffic.installs === 0) signal = 'no-installs';
+        else if (traffic.impressions < 20) signal = 'thin';
+      }
+      return { keyword, position, traffic, signal };
+    }).sort((a, b) => (b.traffic?.installs ?? -1) - (a.traffic?.installs ?? -1) || (b.traffic?.impressions ?? -1) - (a.traffic?.impressions ?? -1));
+  }, [activeLocale, currentKws, rankings, asaKeywords, asaTerms]);
 
   const save = async () => {
     setSaving(true);
@@ -182,7 +233,7 @@ export default function KeywordsEditor({ app, onChanged, onRunLocaleSnapshot, on
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 16, alignItems: 'flex-start' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '320px minmax(0, 1fr)', gap: 16, alignItems: 'flex-start', width: '100%', minWidth: 0 }}>
       {/* Left panel — locales list */}
       <div style={{ background: 'var(--bg-raised)', borderRadius: 16, boxShadow: 'inset 0 0 0 1px var(--border)', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--bg-sunken)', borderRadius: 8, padding: '0 10px', height: 32, boxShadow: 'inset 0 0 0 1px var(--border-subtle)' }}>
@@ -228,7 +279,7 @@ export default function KeywordsEditor({ app, onChanged, onRunLocaleSnapshot, on
       </div>
 
       {/* Right panel — keyword chips */}
-      <div style={{ background: 'var(--bg-raised)', borderRadius: 16, boxShadow: 'inset 0 0 0 1px var(--border)', padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ background: 'var(--bg-raised)', borderRadius: 16, boxShadow: 'inset 0 0 0 1px var(--border)', padding: 20, display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
         {!activeLocale ? (
           <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 40 }}>
             No locale selected.
@@ -276,32 +327,34 @@ export default function KeywordsEditor({ app, onChanged, onRunLocaleSnapshot, on
               </button>
             </div>
 
-            {/* Chip grid */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: 12, background: 'var(--bg-sunken)', borderRadius: 12, minHeight: 80 }}>
+            {trafficAvailable === false && (
+              <div style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--bg-sunken)', color: 'var(--text-muted)', fontSize: 12.5 }}>
+                Apple Ads traffic is unavailable. Start the ASA module and sync it to add 12-week impressions, installs and subscription quality.
+              </div>
+            )}
+
+            {/* Keyword demand table */}
+            <div style={{ overflow: 'auto', background: 'var(--bg-sunken)', borderRadius: 12, minHeight: 80 }}>
               {currentKws.length === 0 && (
                 <div style={{ color: 'var(--text-faint)', fontSize: 13.5, padding: 12 }}>No keywords yet — add one above.</div>
               )}
-              {currentKws.map((kw) => (
-                <div
-                  key={kw}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                    height: 28, padding: '0 6px 0 10px',
-                    borderRadius: 8, background: 'var(--bg-raised)',
-                    boxShadow: 'inset 0 0 0 1px var(--border)',
-                    fontSize: 13.5, fontWeight: 500,
-                  }}
-                >
-                  <span>{kw}</span>
-                  <button
-                    onClick={() => removeKeyword(kw)}
-                    className="btn btn-ghost"
-                    style={{ padding: 0, width: 18, height: 18, borderRadius: 4, color: 'var(--text-faint)' }}
-                  >
-                    <Icon name="x" size={10} stroke={2.2} />
-                  </button>
-                </div>
-              ))}
+              {currentKws.length > 0 && <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860, fontSize: 12.5 }}>
+                <thead><tr style={{ color: 'var(--text-muted)', textAlign: 'right' }}>
+                  <th style={{ ...trafficTh, textAlign: 'left' }}>Keyword</th><th style={trafficTh}>Pos.</th><th style={trafficTh}>Impr.</th><th style={trafficTh}>Taps</th><th style={trafficTh}>Installs</th><th style={trafficTh}>Trials</th><th style={trafficTh}>Paid</th><th style={trafficTh}>Spend</th><th style={{ ...trafficTh, textAlign: 'left' }}>Signal</th><th style={trafficTh}></th>
+                </tr></thead>
+                <tbody>{keywordRows.map((row) => <tr key={row.keyword} style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                  <td style={{ ...trafficTd, fontWeight: 600 }}>{row.keyword}</td>
+                  <td style={trafficTdNum}>{row.position ?? '—'}</td>
+                  <td style={trafficTdNum}>{row.traffic?.impressions ?? '—'}</td>
+                  <td style={trafficTdNum}>{row.traffic?.taps ?? '—'}</td>
+                  <td style={trafficTdNum}>{row.traffic?.installs ?? '—'}</td>
+                  <td style={trafficTdNum}>{row.traffic?.trials ?? '—'}</td>
+                  <td style={trafficTdNum}>{row.traffic?.paid ?? '—'}</td>
+                  <td style={trafficTdNum}>{row.traffic ? `$${row.traffic.spend.toFixed(2)}` : '—'}</td>
+                  <td style={trafficTd}><SignalBadge signal={row.signal} /></td>
+                  <td style={trafficTdNum}><button onClick={() => removeKeyword(row.keyword)} className="btn btn-ghost" style={{ padding: 0, width: 22, height: 22, color: 'var(--text-faint)' }}><Icon name="x" size={10} /></button></td>
+                </tr>)}</tbody>
+              </table>}
             </div>
           </>
         )}
@@ -332,6 +385,19 @@ export default function KeywordsEditor({ app, onChanged, onRunLocaleSnapshot, on
       )}
     </div>
   );
+}
+
+const trafficTh = { padding: '9px 10px', fontWeight: 600, whiteSpace: 'nowrap' } as const;
+const trafficTd = { padding: '9px 10px', color: 'var(--text)' } as const;
+const trafficTdNum = { ...trafficTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums' } as const;
+
+function SignalBadge({ signal }: { signal: 'revenue' | 'proven' | 'trial-risk' | 'no-installs' | 'thin' | 'unknown' }) {
+  const labels = {
+    revenue: ['Revenue', 'pos'], proven: ['Proven', 'pos'], 'trial-risk': ['Trial risk', 'accent'],
+    'no-installs': ['No installs', 'neg'], thin: ['Thin traffic', 'accent'], unknown: ['No Ads data', 'neutral'],
+  } as const;
+  const [label, tone] = labels[signal];
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
 function AddLocalePicker({ existing, onPick, onClose }: { existing: string[]; onPick: (code: string) => void; onClose: () => void }) {

@@ -71,6 +71,9 @@ export interface KeywordWithMetrics {
   installs: number;
   spend: number;
   cpt: number;
+  trials: number;
+  paid: number;
+  revenue_usd: number;
 }
 
 export function listKeywordsWithMetrics(daysBack = 14, campaignId?: number, appId?: number): KeywordWithMetrics[] {
@@ -88,10 +91,14 @@ export function listKeywordsWithMetrics(daysBack = 14, campaignId?: number, appI
            COALESCE(SUM(d.taps), 0) AS taps,
            COALESCE(SUM(d.installs), 0) AS installs,
            COALESCE(SUM(d.spend), 0) AS spend,
-           CASE WHEN SUM(d.taps) > 0 THEN SUM(d.spend) / SUM(d.taps) ELSE 0 END AS cpt
+           CASE WHEN SUM(d.taps) > 0 THEN SUM(d.spend) / SUM(d.taps) ELSE 0 END AS cpt,
+           COALESCE(r.trials, 0) AS trials,
+           COALESCE(r.paid, 0) AS paid,
+           COALESCE(r.revenue_usd, 0) AS revenue_usd
     FROM asa_keywords k
     JOIN asa_campaigns c ON c.id = k.campaign_id
     LEFT JOIN asa_kw_daily d ON d.keyword_id = k.id AND d.date >= ?
+    LEFT JOIN asa_kw_revenue r ON r.keyword_id = k.id AND r.campaign_id = k.campaign_id
     WHERE k.deleted = 0 ${where}
     GROUP BY k.id
     ORDER BY spend DESC, impressions DESC

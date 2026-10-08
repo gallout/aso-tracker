@@ -20,11 +20,14 @@ const NAV_TO_SCREEN: Record<string, Screen> = {
 };
 
 export default function App() {
+  const initialPath = window.location.pathname;
+  const initialAppId = initialPath.startsWith('/app/') ? decodeURIComponent(initialPath.slice('/app/'.length)) : null;
+  const initialScreen: Screen = initialAppId ? 'app-detail' : initialPath === '/keywords' ? 'keywords' : initialPath === '/analytics' ? 'analytics' : 'dashboard';
   const [theme, setTheme] = useState<'light' | 'dark'>(
     () => (localStorage.getItem('theme') as 'light' | 'dark') ?? 'dark'
   );
-  const [screen, setScreen] = useState<Screen>('dashboard');
-  const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
+  const [screen, setScreen] = useState<Screen>(initialScreen);
+  const [selectedAppId, setSelectedAppId] = useState<string | null>(initialAppId);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [snapshotOpen, setSnapshotOpen] = useState(false);
@@ -175,13 +178,30 @@ export default function App() {
     if (target) {
       setScreen(target);
       setSelectedAppId(null);
+      window.history.pushState({}, '', target === 'dashboard' ? '/' : `/${target}`);
     }
   };
 
   const openApp = (appId: string) => {
     setSelectedAppId(appId);
     setScreen('app-detail');
+    window.history.pushState({}, '', `/app/${encodeURIComponent(appId)}`);
   };
+
+  useEffect(() => {
+    const onPopState = () => {
+      const path = window.location.pathname;
+      if (path.startsWith('/app/')) {
+        setSelectedAppId(decodeURIComponent(path.slice('/app/'.length)));
+        setScreen('app-detail');
+      } else {
+        setSelectedAppId(null);
+        setScreen(path === '/keywords' ? 'keywords' : path === '/analytics' ? 'analytics' : 'dashboard');
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   const selectedApp = apps?.find((a) => a.id === selectedAppId) ?? null;
   const showEmpty = apps != null && apps.length === 0 && screen === 'dashboard';
@@ -207,7 +227,7 @@ export default function App() {
         <AppDetailScreen
           app={selectedApp}
           theme={theme}
-          onBack={() => { setScreen('dashboard'); setSelectedAppId(null); }}
+          onBack={() => { setScreen('dashboard'); setSelectedAppId(null); window.history.pushState({}, '', '/'); }}
           onCmdK={() => setCmdOpen(true)}
           onSettings={() => setSettingsOpen(true)}
           onToggleTheme={toggleTheme}
@@ -228,6 +248,7 @@ export default function App() {
               alert('Failed to delete: ' + (e as Error).message);
             }
           }}
+          initialTab={new URLSearchParams(window.location.search).get('tab') === 'keywords' ? 'keywords' : 'rankings'}
         />
       )}
 

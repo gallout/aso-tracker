@@ -3,7 +3,7 @@ import { existsSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { KEYWORDS_FILES_DIR } from './paths.js';
 import { getAppsWithStats, getLocaleStatsByApp, getRankings } from './queries.js';
-import { loadApps, saveApps, loadKeywords, saveKeywords, type AppConfig } from './config.js';
+import { loadApps, saveApps, loadKeywords, saveKeywords, loadKeywordTraffic, saveKeywordTraffic, type AppConfig, type KeywordTrafficRow } from './config.js';
 import { db } from './db.js';
 import { runSnapshot, refreshKeyword, getLiveRuntime, setLiveSpeed } from './snapshot.js';
 import { getMovers } from './analytics.js';
@@ -71,6 +71,16 @@ app.get('/api/apps/:id/keywords', (req, res) => {
 app.put('/api/apps/:id/keywords', (req, res) => {
   saveKeywords(req.params.id, req.body);
   res.json({ ok: true });
+});
+
+app.get('/api/apps/:id/keyword-traffic', (req, res) => {
+  res.json(loadKeywordTraffic(req.params.id));
+});
+
+app.put('/api/apps/:id/keyword-traffic', (req, res) => {
+  const rows = Array.isArray(req.body) ? req.body as KeywordTrafficRow[] : [];
+  saveKeywordTraffic(req.params.id, rows);
+  res.json({ ok: true, rows: rows.length });
 });
 
 // --- Rankings table ---

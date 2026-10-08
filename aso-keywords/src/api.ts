@@ -45,6 +45,27 @@ export interface RankingRow {
   trend: number[];
 }
 
+export interface AsaKeywordMetric {
+  text: string;
+  country: string;
+  impressions: number;
+  taps: number;
+  installs: number;
+  spend: number;
+  trials: number;
+  paid: number;
+  revenue_usd: number;
+}
+
+export interface AsaSearchTermMetric {
+  term: string;
+  country: string;
+  impressions: number;
+  taps: number;
+  installs: number;
+  spend: number;
+}
+
 export interface CompetitorSummary {
   bundleId: string;
   name: string;
@@ -127,6 +148,12 @@ export const api = {
     fetch(`/api/apps/${id}/locales`).then((r) => j<LocaleAvg[]>(r)),
   rankings: (id: string, locale?: string) =>
     fetch(`/api/apps/${id}/rankings${locale ? `?locale=${locale}` : ''}`).then((r) => j<RankingRow[]>(r)),
+  asaKeywords: (iTunesId: string, days = 84) =>
+    fetch(`/asa-api/keywords?days=${days}&app_id=${encodeURIComponent(iTunesId)}`).then((r) => j<AsaKeywordMetric[]>(r)),
+  asaSearchTerms: (iTunesId: string, days = 84) =>
+    fetch(`/asa-api/search-terms?days=${days}&app_id=${encodeURIComponent(iTunesId)}`).then((r) => j<AsaSearchTermMetric[]>(r)),
+  keywordTraffic: (id: string) =>
+    fetch(`/api/apps/${id}/keyword-traffic`).then((r) => j<AsaKeywordMetric[]>(r)),
   competitors: (id: string) =>
     fetch(`/api/apps/${id}/competitors`).then((r) => j<CompetitorSummary[]>(r)),
   competitorInfo: (bundleId: string) =>

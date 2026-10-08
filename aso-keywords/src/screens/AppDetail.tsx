@@ -27,6 +27,7 @@ interface Props {
   onOpenCompetitor: (bundleId: string) => void;
   onRunSnapshot: (opts?: { locales?: string[] }) => void;
   onDelete: () => void;
+  initialTab?: Tab;
 }
 
 type Tab = 'rankings' | 'keywords' | 'locales' | 'history';
@@ -42,8 +43,9 @@ export default function AppDetailScreen({
   onOpenCompetitor,
   onRunSnapshot,
   onDelete,
+  initialTab = 'rankings',
 }: Props) {
-  const [tab, setTab] = useState<Tab>('rankings');
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [locale, setLocale] = useState<string>('ALL');
   const [pageSize, setPageSize] = useState<PageSize>(100);
   const [search, setSearch] = useState('');

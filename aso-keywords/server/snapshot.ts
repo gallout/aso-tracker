@@ -161,6 +161,9 @@ export async function runSnapshot(opts: SnapshotOptions = {}) {
   emit({ type: 'start', total: totalCombos, sleepMs, workers });
 
   const records: SnapshotRow[] = [];
+  // A storefront can consistently reject one specific query even while adjacent
+  // queries succeed. Do not let that single task cycle through cooldowns forever.
+  const rateLimitAttempts = new Map<string, number>();
   let completed = 0;
   let aborted = false;
   let abortReason: string | undefined;
@@ -290,6 +293,32 @@ export async function runSnapshot(opts: SnapshotOptions = {}) {
           });
         } catch (e) {
           if (e instanceof RateLimited) {
+            const retryKey = `${task.app.id}|${task.locale}|${task.keyword}`;
+            const attempts = (rateLimitAttempts.get(retryKey) ?? 0) + 1;
+            rateLimitAttempts.set(retryKey, attempts);
+            if (attempts >= 1) {
+              const rec: SnapshotRow = {
+                date: today,
+                app: task.app.id,
+                locale: task.locale,
+                keyword: task.keyword,
+                position: null,
+                total: 0,
+                top5: [],
+                error: (e as Error).message,
+              };
+              records.push(rec);
+              completed++;
+              emit({
+                type: 'keyword',
+                completed,
+                total: totalCombos,
+                locale: task.locale,
+                keyword: task.keyword,
+                error: rec.error,
+              });
+              continue;
+            }
             // Auto-throttle path: re-queue the task, slow down, cooldown, retry. Only one
             // worker actually escalates — others see updated cooldownUntil and pause too.
             await autoThrottle((e as Error).message);
