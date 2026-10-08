@@ -134,11 +134,14 @@ export default function KeywordsEditor({ app, onChanged, onRunLocaleSnapshot, on
   const keywordRows = useMemo(() => {
     const norm = (s: string) => s.trim().toLocaleLowerCase();
     const country = activeLocale?.split('-')[0].toLowerCase();
-    const byTerm = new Map<string, { impressions: number; taps: number; installs: number; spend: number; trials: number; paid: number; revenue: number }>();
+    const byTerm = new Map<string, { impressions: number; taps: number; installs: number; spend: number; trials: number; paid: number; revenue: number; hasSubscriptionData: boolean }>();
     const add = (term: string, metric: { country: string; impressions: number; taps: number; installs: number; spend: number; trials?: number; paid?: number; revenue_usd?: number }) => {
-      if (country && metric.country.toLowerCase() !== country) return;
+      const metricCountry = metric.country.toLowerCase();
+      // Manually imported campaign reports can be aggregated across storefronts.
+      // Keep that traffic visible for every locale instead of dropping it.
+      if (country && metricCountry !== 'all' && metricCountry !== country) return;
       const key = norm(term);
-      const row = byTerm.get(key) ?? { impressions: 0, taps: 0, installs: 0, spend: 0, trials: 0, paid: 0, revenue: 0 };
+      const row = byTerm.get(key) ?? { impressions: 0, taps: 0, installs: 0, spend: 0, trials: 0, paid: 0, revenue: 0, hasSubscriptionData: false };
       row.impressions += metric.impressions || 0;
       row.taps += metric.taps || 0;
       row.installs += metric.installs || 0;
@@ -146,6 +149,7 @@ export default function KeywordsEditor({ app, onChanged, onRunLocaleSnapshot, on
       row.trials += metric.trials || 0;
       row.paid += metric.paid || 0;
       row.revenue += metric.revenue_usd || 0;
+      row.hasSubscriptionData ||= metric.trials !== undefined || metric.paid !== undefined || metric.revenue_usd !== undefined;
       byTerm.set(key, row);
     };
     asaKeywords.forEach((m) => add(m.text, m));
@@ -157,7 +161,7 @@ export default function KeywordsEditor({ app, onChanged, onRunLocaleSnapshot, on
       let signal: 'revenue' | 'proven' | 'trial-risk' | 'no-installs' | 'thin' | 'unknown' = 'unknown';
       if (traffic) {
         if (traffic.paid > 0 || traffic.revenue > 0) signal = 'revenue';
-        else if (traffic.trials > 0) signal = 'trial-risk';
+        else if (traffic.hasSubscriptionData && traffic.trials > 0) signal = 'trial-risk';
         else if (traffic.installs >= 3) signal = 'proven';
         else if (traffic.impressions >= 100 && traffic.installs === 0) signal = 'no-installs';
         else if (traffic.impressions < 20) signal = 'thin';
@@ -348,8 +352,8 @@ export default function KeywordsEditor({ app, onChanged, onRunLocaleSnapshot, on
                   <td style={trafficTdNum}>{row.traffic?.impressions ?? '—'}</td>
                   <td style={trafficTdNum}>{row.traffic?.taps ?? '—'}</td>
                   <td style={trafficTdNum}>{row.traffic?.installs ?? '—'}</td>
-                  <td style={trafficTdNum}>{row.traffic?.trials ?? '—'}</td>
-                  <td style={trafficTdNum}>{row.traffic?.paid ?? '—'}</td>
+                  <td style={trafficTdNum}>{row.traffic?.hasSubscriptionData ? row.traffic.trials : '—'}</td>
+                  <td style={trafficTdNum}>{row.traffic?.hasSubscriptionData ? row.traffic.paid : '—'}</td>
                   <td style={trafficTdNum}>{row.traffic ? `$${row.traffic.spend.toFixed(2)}` : '—'}</td>
                   <td style={trafficTd}><SignalBadge signal={row.signal} /></td>
                   <td style={trafficTdNum}><button onClick={() => removeKeyword(row.keyword)} className="btn btn-ghost" style={{ padding: 0, width: 22, height: 22, color: 'var(--text-faint)' }}><Icon name="x" size={10} /></button></td>
