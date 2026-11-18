@@ -157,18 +157,21 @@ function nativeSearchRequest(locale, keyword) {
 		language,
 		headers: {
 			Accept: "application/json",
-			"X-Apple-Store-Front": `${storefront},24 t:native`,
-			"Accept-Language": language
+			"X-Apple-Store-Front": `${storefront},29`,
+			"Accept-Language": language,
+			"User-Agent": "AppStore/3.0 iOS/17.5 model/iPhone15,2 hwp/t8120 build/21F79 (6; dt:280) AMS/1"
 		}
 	};
 }
 const responseDetails = /* @__PURE__ */ new WeakMap();
 function parseNativeSearch(payload, locale, keyword) {
 	const request = nativeSearchRequest(locale, keyword);
-	const data = payload?.storePlatformData?.["native-search-lockup-search"];
+	if (!payload?.pageData) throw new Error("Legacy native response cannot confirm a current rank");
+	const page = payload.pageData;
+	const data = payload?.storePlatformData?.["native-search-lockup"];
 	const store = data?.meta?.storefront;
-	if (payload?.term !== keyword) throw new Error("Native search context mismatch; no rank recorded");
-	if (!store && payload.metricsBase?.page === "Search_NoResults" && payload.metricsBase.storeFront === String(request.storefront) && payload.metricsBase.storeFrontHeader === request.headers["X-Apple-Store-Front"] && Array.isArray(payload.bubbles) && payload.bubbles.length === 0) {
+	if (page?.term !== keyword) throw new Error("Native search context mismatch; no rank recorded");
+	if (!store && page.metricsBase?.page === "Search_NoResults" && page.metricsBase.storeFront === String(request.storefront) && page.metricsBase.storeFrontHeader === request.headers["X-Apple-Store-Front"] && Array.isArray(page.bubbles) && page.bubbles.length === 0) {
 		const results = [];
 		responseDetails.set(results, {
 			reportedTotal: 0,
@@ -178,9 +181,10 @@ function parseNativeSearch(payload, locale, keyword) {
 		return results;
 	}
 	if (store?.cc?.toLowerCase() !== request.country || String(store?.id) !== String(request.storefront)) throw new Error("Native search context mismatch; no rank recorded");
-	const bubble = payload.bubbles?.find((b) => b.name === "software");
+	const bubble = page.bubbles?.find((b) => b.name === "software");
 	if (!bubble || !Array.isArray(bubble.results)) throw new Error("Native software results missing; no rank recorded");
 	if (!Number.isSafeInteger(bubble.totalCount) || (bubble.totalCount ?? -1) < 0 || bubble.results.length > (bubble.totalCount ?? 0) || !bubble.results.length && bubble.totalCount !== 0) throw new Error("Invalid native search count; no rank recorded");
+	if (bubble.results.length < Math.min(200, bubble.totalCount)) throw new Error("Incomplete native search response; exact rank withheld");
 	const seen = /* @__PURE__ */ new Set();
 	const results = bubble.results.slice(0, 200).map((item) => {
 		const id = Number(item.id);
@@ -206,6 +210,7 @@ function searchEvidence(locale, keyword, results) {
 	const request = nativeSearchRequest(locale, keyword);
 	return {
 		source: RANKING_SOURCE,
+		responseFormat: "native-current-29-v2",
 		url: request.url,
 		storefront: request.storefront,
 		country: request.country,
@@ -248,10 +253,11 @@ async function searchAppStore(locale, keyword, { sleepMs = 3e3 } = {}) {
 			return parseNativeSearch(payload, locale, keyword);
 		} catch (error) {
 			error.evidence = {
-				term: payload?.term,
-				metrics: payload?.metricsBase,
-				metadata: payload?.storePlatformData?.["native-search-lockup-search"]?.meta,
-				bubbles: payload?.bubbles
+				responseFormat: "native-current-29-v2",
+				term: payload?.pageData?.term,
+				metrics: payload?.pageData?.metricsBase,
+				metadata: payload?.storePlatformData?.["native-search-lockup"]?.meta,
+				bubbles: payload?.pageData?.bubbles
 			};
 			throw error;
 		}
