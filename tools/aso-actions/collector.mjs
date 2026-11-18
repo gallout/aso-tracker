@@ -224,7 +224,18 @@ async function searchAppStore(locale, keyword, { sleepMs = 3e3 } = {}) {
 			504
 		].includes(response.status)) throw new RateLimited(`App Store HTTP ${response.status}; no rank recorded`);
 		if (!response.ok) throw new Error(`App Store HTTP ${response.status}; no rank recorded`);
-		return parseNativeSearch(await response.json(), locale, keyword);
+		const payload = await response.json();
+		try {
+			return parseNativeSearch(payload, locale, keyword);
+		} catch (error) {
+			error.evidence = {
+				term: payload?.term,
+				metrics: payload?.metricsBase,
+				metadata: payload?.storePlatformData?.["native-search-lockup-search"]?.meta,
+				bubbles: payload?.bubbles
+			};
+			throw error;
+		}
 	})();
 	pending.set(key, task);
 	try {
@@ -340,7 +351,12 @@ async function collect() {
 				total: 0,
 				top5: [],
 				source: RANKING_SOURCE,
-				error
+				error,
+				evidence: {
+					diagnostic: e.evidence,
+					transport: "github-actions",
+					runId: process.env.GITHUB_RUN_ID
+				}
 			});
 			if (/HTTP (403|429)/.test(error)) {
 				blocked++;
