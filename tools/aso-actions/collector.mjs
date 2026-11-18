@@ -174,7 +174,7 @@ function parseNativeSearch(payload, locale, keyword) {
 	const seen = /* @__PURE__ */ new Set();
 	return bubble.results.slice(0, 200).map((item) => {
 		const id = Number(item.id);
-		if (item.entity !== "software" || !Number.isSafeInteger(id) || id <= 0 || seen.has(id)) throw new Error("Invalid or duplicate search app ID; no rank recorded");
+		if (!["software", "iphoneAppBundle"].includes(item.entity ?? "") || !Number.isSafeInteger(id) || id <= 0 || seen.has(id)) throw new Error("Invalid or duplicate search app ID; no rank recorded");
 		seen.add(id);
 		const meta = data?.results?.[String(id)];
 		return {
