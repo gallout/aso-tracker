@@ -7,6 +7,11 @@ on:
         description: Private snapshot batch identifier
         required: true
         type: string
+      apps:
+        description: JSON array of configured project slugs
+        required: false
+        default: '["bunny-cleaner-phone-cleanup","find-the-spy-party-game","bunny-sign-pdf-signer","bunny-resume-cv-builder","spark-again-couples-game"]'
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -21,7 +26,7 @@ jobs:
       fail-fast: false
       max-parallel: 5
       matrix:
-        app: [bunny-cleaner-phone-cleanup, find-the-spy-party-game, bunny-sign-pdf-signer, bunny-resume-cv-builder, spark-again-couples-game]
+        app: ${{ fromJSON(inputs.apps) }}
     steps:
       - uses: actions/checkout@v4
         with:
