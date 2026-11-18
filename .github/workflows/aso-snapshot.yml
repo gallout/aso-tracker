@@ -1,0 +1,42 @@
+name: ASO native snapshots
+run-name: ASO snapshot ${{ inputs.batch }}
+on:
+  workflow_dispatch:
+    inputs:
+      batch:
+        description: Private snapshot batch identifier
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: aso-private-snapshot
+  cancel-in-progress: false
+jobs:
+  collect:
+    name: ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        app: [bunny-cleaner-phone-cleanup, find-the-spy-party-game, bunny-sign-pdf-signer, bunny-resume-cv-builder, spark-again-couples-game]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: tools/aso-actions
+      - name: Collect native App Store results
+        env:
+          ASO_APP_ID: ${{ matrix.app }}
+          ASO_SNAPSHOT_INPUT: ${{ secrets.ASO_SNAPSHOT_INPUT }}
+          ASO_SNAPSHOT_OUTPUT_KEY: ${{ secrets.ASO_SNAPSHOT_OUTPUT_KEY }}
+        run: node tools/aso-actions/collector.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: aso-${{ inputs.batch }}-${{ matrix.app }}
+          path: snapshot-*.enc
+          retention-days: 1
+          if-no-files-found: warn
