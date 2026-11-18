@@ -184,7 +184,7 @@ function parseNativeSearch(payload, locale, keyword) {
 	const bubble = page.bubbles?.find((b) => b.name === "software");
 	if (!bubble || !Array.isArray(bubble.results)) throw new Error("Native software results missing; no rank recorded");
 	if (!Number.isSafeInteger(bubble.totalCount) || (bubble.totalCount ?? -1) < 0 || bubble.results.length > (bubble.totalCount ?? 0) || !bubble.results.length && bubble.totalCount !== 0) throw new Error("Invalid native search count; no rank recorded");
-	if (bubble.results.length < Math.min(200, bubble.totalCount)) throw new Error("Incomplete native search response; exact rank withheld");
+	if (bubble.results.length < Math.min(250, bubble.totalCount)) throw new Error("Incomplete native search response; exact rank withheld");
 	const seen = /* @__PURE__ */ new Set();
 	const results = bubble.results.slice(0, 200).map((item) => {
 		const id = Number(item.id);
@@ -311,13 +311,15 @@ function findAppStorePosition(results, appId) {
 async function probeNative(locale, keyword) {
 	const request = nativeSearchRequest(locale, keyword);
 	const responses = [];
-	for (const mode of ["legacy", "current"]) {
+	for (const mode of [
+		"current",
+		"ios18",
+		"ios26"
+	]) {
+		const userAgent = mode === "ios26" ? "AppStore/3.0 iOS/26.0 model/iPhone17,2 hwp/t8140 build/23A341 (6; dt:341) AMS/1" : mode === "ios18" ? "AppStore/3.0 iOS/18.5 model/iPhone17,2 hwp/t8140 build/22F76 (6; dt:341) AMS/1" : request.headers["User-Agent"];
 		const headers = {
 			...request.headers,
-			...mode === "current" ? {
-				"X-Apple-Store-Front": `${request.storefront},29`,
-				"User-Agent": "AppStore/3.0 iOS/17.5 model/iPhone15,2 hwp/t8120 build/21F79 (6; dt:280) AMS/1"
-			} : {}
+			"User-Agent": userAgent
 		};
 		const response = await fetch(request.url, {
 			headers,
