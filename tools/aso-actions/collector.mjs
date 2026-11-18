@@ -301,6 +301,32 @@ function findAppStorePosition(results, appId) {
 	};
 }
 //#endregion
+//#region tools/aso-actions/verification-probe.ts
+async function probeNative(locale, keyword) {
+	const request = nativeSearchRequest(locale, keyword);
+	const responses = [];
+	for (const mode of ["legacy", "current"]) {
+		const headers = {
+			...request.headers,
+			...mode === "current" ? {
+				"X-Apple-Store-Front": `${request.storefront},29`,
+				"User-Agent": "AppStore/3.0 iOS/17.5 model/iPhone15,2 hwp/t8120 build/21F79 (6; dt:280) AMS/1"
+			} : {}
+		};
+		const response = await fetch(request.url, {
+			headers,
+			signal: AbortSignal.timeout(3e4)
+		});
+		responses.push({
+			mode,
+			status: response.status,
+			payload: response.ok ? await response.json() : null
+		});
+		await new Promise((r) => setTimeout(r, 2500));
+	}
+	return responses;
+}
+//#endregion
 //#region tools/aso-actions/collector.ts
 async function collect() {
 	const input = JSON.parse(gunzipSync(Buffer.from(process.env.ASO_SNAPSHOT_INPUT || "", "base64")).toString());
@@ -342,6 +368,26 @@ async function collect() {
 	for (const task of tasks) {
 		let error;
 		try {
+			if (input.verificationProbe) {
+				const responses = await probeNative(task.locale, task.keyword);
+				records.push({
+					date: input.date,
+					app: app.id,
+					locale: task.locale,
+					keyword: task.keyword,
+					position: null,
+					total: 0,
+					top5: [],
+					source: RANKING_SOURCE,
+					error: "Verification probe; no rank recorded",
+					evidence: {
+						verification: responses,
+						transport: "github-actions",
+						runId: process.env.GITHUB_RUN_ID
+					}
+				});
+				continue;
+			}
 			const results = await searchAppStore(task.locale, task.keyword, { sleepMs: 2500 });
 			const rank = findAppStorePosition(results, app.iTunesId);
 			blocked = 0;
