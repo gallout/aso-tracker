@@ -307,24 +307,53 @@ function findAppStorePosition(results, appId) {
 	};
 }
 //#endregion
+//#region tools/aso-actions/public-search-params.ts
+const PUBLIC_SEARCH_PARAMS = {
+	"platform": "web",
+	"additionalPlatforms": "appletv,ipad,iphone,mac,realityDevice,watch",
+	"extend": "adCreativeArtwork,adCreativeVideo,ageRating,customArtwork,customCreativeArtworks,customCreativeVideos,customDeepLink,customIconArtwork,customScreenshotsByType,customScreenshotsByTypeForAd,customVideoPreviewsByType,customVideoPreviewsByTypeForAd,editorialBadgeInfo,editorialVideo,genreShortDisplayName,iconArtwork,macRequiredCapabilities,messagesScreenshots,minimumOSVersion,remoteControllerRequirement,requiredCapabilities,secondaryGenreShortDisplayNames,supportsFunCamera",
+	"extend[editorial-items]": "showLabelInSearch",
+	"extend[apps]": "isVerifiedForAppleSiliconMac",
+	"extend[app-events]": "description,gamesUrl,productArtwork,productVideo",
+	"include": "apps,top-apps",
+	"include[editorial-items]": "marketing-items,primary-content",
+	"meta[marketing-items]": "metrics",
+	"associate[apps]": "app-events",
+	"previewPlatform": "iphone",
+	"limit[ads-result]": "4",
+	"bubble[search]": "apps,developers,groupings,editorial-items,app-bundles,in-apps",
+	"with": "macOSCompatibleIOSApps",
+	"l": "en-US"
+};
+//#endregion
 //#region tools/aso-actions/verification-probe.ts
 async function probeNative(locale, keyword) {
 	const request = nativeSearchRequest(locale, keyword);
 	const responses = [];
 	for (const mode of [
-		"entity-software",
-		"iphone",
-		"num250"
+		"iphone-repeat-a",
+		"iphone-repeat-b",
+		"web-exact"
 	]) {
-		const url = new URL(request.url);
+		let url = new URL(request.url);
 		url.searchParams.set("entity", "software");
-		if (mode === "iphone") url.searchParams.set("softwareType", "iphone");
-		if (mode === "num250") {
-			url.searchParams.set("num", "250");
-			url.searchParams.set("limit", "250");
+		url.searchParams.set("softwareType", "iphone");
+		const headers = { ...request.headers };
+		if (mode === "web-exact") {
+			url = new URL(`https://apps.apple.com/api/apps/v1/catalog/${request.country}/search`);
+			for (const [key, value] of Object.entries(PUBLIC_SEARCH_PARAMS)) url.searchParams.set(key, value);
+			url.searchParams.set("term", keyword);
+			url.searchParams.set("l", request.language);
+			url.searchParams.set("limit[apps]", "200");
+			Object.assign(headers, {
+				origin: "https://amp.apple.com",
+				"x-apple-client-version": "2646.1.0-external",
+				referer: `https://apps.apple.com/${request.country}/iphone/search`,
+				"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15"
+			});
 		}
 		const response = await fetch(url, {
-			headers: request.headers,
+			headers,
 			signal: AbortSignal.timeout(3e4)
 		});
 		const text = await response.text();
