@@ -211,7 +211,7 @@ function searchEvidence(locale, keyword, results) {
 	return {
 		source: RANKING_SOURCE,
 		responseFormat: "native-current-29-v2",
-		url: request.url,
+		url: responseDetails.get(results)?.requestUrl ?? request.url,
 		storefront: request.storefront,
 		country: request.country,
 		requestedLanguage: request.language,
@@ -233,34 +233,55 @@ async function searchAppStore(locale, keyword, { sleepMs = 3e3 } = {}) {
 	const existing = pending.get(key);
 	if (existing) return existing;
 	const task = (async () => {
-		const slot = Math.max(Date.now(), nextRequestAt);
-		nextRequestAt = slot + Math.max(1e3, sleepMs);
-		if (slot > Date.now()) await new Promise((r) => setTimeout(r, slot - Date.now()));
-		const response = await fetchSearch(request.url, {
-			headers: request.headers,
-			signal: AbortSignal.timeout(3e4)
-		});
-		if ([
-			403,
-			429,
-			502,
-			503,
-			504
-		].includes(response.status)) throw new RateLimited(`App Store HTTP ${response.status}; no rank recorded`);
-		if (!response.ok) throw new Error(`App Store HTTP ${response.status}; no rank recorded`);
-		const payload = await response.json();
-		try {
-			return parseNativeSearch(payload, locale, keyword);
-		} catch (error) {
-			error.evidence = {
-				responseFormat: "native-current-29-v2",
-				term: payload?.pageData?.term,
-				metrics: payload?.pageData?.metricsBase,
-				metadata: payload?.storePlatformData?.["native-search-lockup"]?.meta,
-				bubbles: payload?.pageData?.bubbles
-			};
-			throw error;
+		const explicitIphone = new URL(request.url);
+		explicitIphone.searchParams.set("entity", "software");
+		explicitIphone.searchParams.set("softwareType", "iphone");
+		const attempts = [];
+		for (const [index, url] of [request.url, explicitIphone.toString()].entries()) {
+			const slot = Math.max(Date.now(), nextRequestAt);
+			nextRequestAt = slot + Math.max(1e3, sleepMs);
+			if (slot > Date.now()) await new Promise((r) => setTimeout(r, slot - Date.now()));
+			const response = await fetchSearch(url, {
+				headers: request.headers,
+				signal: AbortSignal.timeout(3e4)
+			});
+			if ([
+				403,
+				429,
+				502,
+				503,
+				504
+			].includes(response.status)) throw new RateLimited(`App Store HTTP ${response.status}; no rank recorded`);
+			if (!response.ok) throw new Error(`App Store HTTP ${response.status}; no rank recorded`);
+			const payload = await response.json();
+			try {
+				const results = parseNativeSearch(payload, locale, keyword);
+				const detail = responseDetails.get(results);
+				responseDetails.set(results, {
+					...detail,
+					requestUrl: url,
+					clientContext: index === 0 ? "native-default" : "native-explicit-iphone"
+				});
+				return results;
+			} catch (error) {
+				const diagnostic = {
+					responseFormat: "native-current-29-v2",
+					requestUrl: url,
+					term: payload?.pageData?.term,
+					metrics: payload?.pageData?.metricsBase,
+					metadata: payload?.storePlatformData?.["native-search-lockup"]?.meta,
+					bubbles: payload?.pageData?.bubbles
+				};
+				attempts.push(diagnostic);
+				error.evidence = {
+					...diagnostic,
+					attempts
+				};
+				if (index === 0 && error.message.startsWith("Incomplete native search response;")) continue;
+				throw error;
+			}
 		}
+		throw new Error("No verified native response");
 	})();
 	pending.set(key, task);
 	try {
