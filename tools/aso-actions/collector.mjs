@@ -312,31 +312,19 @@ async function probeNative(locale, keyword) {
 	const request = nativeSearchRequest(locale, keyword);
 	const responses = [];
 	for (const mode of [
-		"native-tag",
-		"apps-tag",
-		"web-api"
+		"entity-software",
+		"iphone",
+		"num250"
 	]) {
-		let url = request.url;
-		const headers = {
-			...request.headers,
-			"X-Apple-Store-Front": `${request.storefront},29 t:${mode === "apps-tag" ? "apps3" : "native"}`
-		};
-		if (mode === "web-api") {
-			const web = new URL(`https://apps.apple.com/api/apps/v1/catalog/${request.country}/search`);
-			for (const [key, value] of Object.entries({
-				platform: "web",
-				previewPlatform: "iphone",
-				"bubble[search]": "apps,developers,groupings,editorial-items,app-bundles,in-apps",
-				include: "apps,top-apps",
-				term: keyword,
-				limit: "200",
-				l: request.language
-			})) web.searchParams.set(key, value);
-			url = web.toString();
-			headers["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15";
+		const url = new URL(request.url);
+		url.searchParams.set("entity", "software");
+		if (mode === "iphone") url.searchParams.set("softwareType", "iphone");
+		if (mode === "num250") {
+			url.searchParams.set("num", "250");
+			url.searchParams.set("limit", "250");
 		}
 		const response = await fetch(url, {
-			headers,
+			headers: request.headers,
 			signal: AbortSignal.timeout(3e4)
 		});
 		const text = await response.text();
@@ -348,6 +336,7 @@ async function probeNative(locale, keyword) {
 		}
 		responses.push({
 			mode,
+			url: url.toString(),
 			status: response.status,
 			payload
 		});
