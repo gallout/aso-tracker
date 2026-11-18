@@ -1,0 +1,37 @@
+name: ASO source probe
+on:
+  push:
+    branches: [codex/aso-source-probe-20261118]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe public Apple native search
+        shell: python
+        run: |
+          import json,time,urllib.request,urllib.parse,urllib.error
+          reports=[]
+          for cc,sf,term,appid in [('es','143454','Limpieza Móvil','6798304958'),('de','143443','spionspiel','6799785742'),('us','143441','cleaner','6798304958')]:
+            for mode in ['native-current','legacy-json']:
+              url='https://search.itunes.apple.com/WebObjects/MZStore.woa/wa/search?'+urllib.parse.urlencode({'clientApplication':'Software','media':'software','term':term})
+              headers={'Accept':'application/json','X-Apple-Store-Front':sf+(',29' if mode=='native-current' else ',24 t:native'),'User-Agent':'AppStore/3.0 iOS/17.5 model/iPhone15,2 hwp/t8120 build/21F79 (6; dt:280) AMS/1' if mode=='native-current' else 'aso-studio/1.0'}
+              record={'country':cc,'keyword':term,'mode':mode}
+              try:
+                with urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=25) as r:
+                  data=json.load(r); page=data.get('pageData',data)
+                  bubble=next((b for b in page.get('bubbles',[]) if b.get('name')=='software'),None)
+                  ids=[str(a.get('id')) for a in bubble.get('results',[])][:200] if bubble else []
+                  record.update(status=r.status,depth=len(ids),position=ids.index(appid)+1 if appid in ids else None,first12=ids[:12],responseKeys=list(data)[:10])
+              except urllib.error.HTTPError as e:record.update(status=e.code)
+              except Exception as e:record.update(error=type(e).__name__+': '+str(e)[:150])
+              reports.append(record);print(json.dumps(record,ensure_ascii=False),flush=True)
+              time.sleep(5)
+          with open('aso-source-probe.json','w') as f:json.dump(reports,f,ensure_ascii=False,indent=2)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aso-source-probe
+          path: aso-source-probe.json
+          retention-days: 3
