@@ -312,23 +312,44 @@ async function probeNative(locale, keyword) {
 	const request = nativeSearchRequest(locale, keyword);
 	const responses = [];
 	for (const mode of [
-		"current",
-		"ios18",
-		"ios26"
+		"native-tag",
+		"apps-tag",
+		"web-api"
 	]) {
-		const userAgent = mode === "ios26" ? "AppStore/3.0 iOS/26.0 model/iPhone17,2 hwp/t8140 build/23A341 (6; dt:341) AMS/1" : mode === "ios18" ? "AppStore/3.0 iOS/18.5 model/iPhone17,2 hwp/t8140 build/22F76 (6; dt:341) AMS/1" : request.headers["User-Agent"];
+		let url = request.url;
 		const headers = {
 			...request.headers,
-			"User-Agent": userAgent
+			"X-Apple-Store-Front": `${request.storefront},29 t:${mode === "apps-tag" ? "apps3" : "native"}`
 		};
-		const response = await fetch(request.url, {
+		if (mode === "web-api") {
+			const web = new URL(`https://apps.apple.com/api/apps/v1/catalog/${request.country}/search`);
+			for (const [key, value] of Object.entries({
+				platform: "web",
+				previewPlatform: "iphone",
+				"bubble[search]": "apps,developers,groupings,editorial-items,app-bundles,in-apps",
+				include: "apps,top-apps",
+				term: keyword,
+				limit: "200",
+				l: request.language
+			})) web.searchParams.set(key, value);
+			url = web.toString();
+			headers["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15";
+		}
+		const response = await fetch(url, {
 			headers,
 			signal: AbortSignal.timeout(3e4)
 		});
+		const text = await response.text();
+		let payload;
+		try {
+			payload = JSON.parse(text);
+		} catch {
+			payload = { nonJson: true };
+		}
 		responses.push({
 			mode,
 			status: response.status,
-			payload: response.ok ? await response.json() : null
+			payload
 		});
 		await new Promise((r) => setTimeout(r, 2500));
 	}
