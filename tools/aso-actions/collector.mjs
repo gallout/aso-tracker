@@ -162,17 +162,27 @@ function nativeSearchRequest(locale, keyword) {
 		}
 	};
 }
+const responseDetails = /* @__PURE__ */ new WeakMap();
 function parseNativeSearch(payload, locale, keyword) {
 	const request = nativeSearchRequest(locale, keyword);
 	const data = payload?.storePlatformData?.["native-search-lockup-search"];
 	const store = data?.meta?.storefront;
-	if (payload?.term !== keyword || store?.cc?.toLowerCase() !== request.country || String(store?.id) !== String(request.storefront)) throw new Error("Native search context mismatch; no rank recorded");
-	if (VARIANTS[locale] && !data?.meta?.language?.tag?.toLowerCase().startsWith(VARIANTS[locale])) throw new Error("Requested App Store language unavailable; no rank recorded");
+	if (payload?.term !== keyword) throw new Error("Native search context mismatch; no rank recorded");
+	if (!store && payload.metricsBase?.page === "Search_NoResults" && payload.metricsBase.storeFront === String(request.storefront) && payload.metricsBase.storeFrontHeader === request.headers["X-Apple-Store-Front"] && Array.isArray(payload.bubbles) && payload.bubbles.length === 0) {
+		const results = [];
+		responseDetails.set(results, {
+			reportedTotal: 0,
+			partial: false,
+			empty: true
+		});
+		return results;
+	}
+	if (store?.cc?.toLowerCase() !== request.country || String(store?.id) !== String(request.storefront)) throw new Error("Native search context mismatch; no rank recorded");
 	const bubble = payload.bubbles?.find((b) => b.name === "software");
 	if (!bubble || !Array.isArray(bubble.results)) throw new Error("Native software results missing; no rank recorded");
-	if (Math.min(200, bubble.totalCount ?? 0) > bubble.results.length) throw new Error("Incomplete native search response; no rank recorded");
+	if (!Number.isSafeInteger(bubble.totalCount) || (bubble.totalCount ?? -1) < 0 || bubble.results.length > (bubble.totalCount ?? 0) || !bubble.results.length && bubble.totalCount !== 0) throw new Error("Invalid native search count; no rank recorded");
 	const seen = /* @__PURE__ */ new Set();
-	return bubble.results.slice(0, 200).map((item) => {
+	const results = bubble.results.slice(0, 200).map((item) => {
 		const id = Number(item.id);
 		if (!["software", "iphoneAppBundle"].includes(item.entity ?? "") || !Number.isSafeInteger(id) || id <= 0 || seen.has(id)) throw new Error("Invalid or duplicate search app ID; no rank recorded");
 		seen.add(id);
@@ -184,6 +194,13 @@ function parseNativeSearch(payload, locale, keyword) {
 			artistName: meta?.artistName ?? ""
 		};
 	});
+	responseDetails.set(results, {
+		effectiveLanguage: data?.meta?.language?.tag,
+		reportedTotal: bubble.totalCount,
+		partial: results.length < Math.min(200, bubble.totalCount),
+		empty: results.length === 0
+	});
+	return results;
 }
 function searchEvidence(locale, keyword, results) {
 	const request = nativeSearchRequest(locale, keyword);
@@ -192,7 +209,9 @@ function searchEvidence(locale, keyword, results) {
 		url: request.url,
 		storefront: request.storefront,
 		country: request.country,
-		language: request.language,
+		requestedLanguage: request.language,
+		...responseDetails.get(results),
+		language: responseDetails.get(results)?.effectiveLanguage ?? null,
 		transport: searchTransportConfig() ? "self-hosted-egress" : "direct",
 		maxDepth: 200,
 		checkedDepth: results.length,
