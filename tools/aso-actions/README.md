@@ -5,4 +5,4 @@ Only public source code belongs in this directory. Keyword lists are passed thro
 Each app has one Ubuntu runner, paced at 24 requests/minute. Repeated 403/429 stops that runner with a partial encrypted checkpoint. No iTunes catalog fallback. GitHub-hosted standard runners are free for public repositories; artifact storage is limited separately. Five small encrypted reports fit well below the default allowance.
 
 Rebuild collector.mjs after changing the TypeScript collector or its imports:
-`node_modules/.bin/esbuild tools/aso-actions/collector.ts --bundle --platform=node --format=esm --outfile=tools/aso-actions/collector.mjs`
+`node_modules/.bin/rolldown tools/aso-actions/collector.ts --platform node --format esm --file tools/aso-actions/collector.mjs`
